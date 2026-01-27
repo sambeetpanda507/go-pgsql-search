@@ -1,9 +1,11 @@
 package routers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/sambeetpanda507/advance-search/controllers"
+	"github.com/sambeetpanda507/advance-search/middlewares"
 )
 
 func Ping(mux *http.ServeMux) {
@@ -17,15 +19,5 @@ func Ping(mux *http.ServeMux) {
 		fmt.Fprintf(w, "Ok")
 	})
 
-	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
-		resp := struct {
-			Message string `json:"message"`
-		}{
-			Message: "Pong",
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
-	})
+	mux.Handle("/api/ping", middlewares.CORS(http.HandlerFunc(controllers.PingHandler)))
 }

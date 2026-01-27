@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/sambeetpanda507/advance-search/middlewares"
 	"github.com/sambeetpanda507/advance-search/routers"
 	"github.com/sambeetpanda507/advance-search/utils"
 )
@@ -15,7 +16,7 @@ import (
 func main() {
 	secrets := utils.GetSecrets()
 	if len(secrets.PORT) == 0 {
-		panic("PORT is missing")
+		log.Fatal("PORT is missing")
 	}
 
 	port := fmt.Sprintf(":%s", secrets.PORT)
@@ -26,7 +27,7 @@ func main() {
 
 	go func() {
 		fmt.Printf("Starting server in %s\n", port)
-		if err := http.ListenAndServe(port, mux); err != nil {
+		if err := http.ListenAndServe(port, middlewares.Logger(mux)); err != nil {
 			log.Fatal(err)
 		}
 	}()
