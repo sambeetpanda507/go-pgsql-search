@@ -7,8 +7,8 @@ import (
 )
 
 type CustomResponseWrite struct {
-	http.ResponseWriter
-	statusCode int
+	ResponseWriter http.ResponseWriter
+	statusCode     int
 }
 
 func (w *CustomResponseWrite) WriteHeader(statusCode int) {
@@ -23,7 +23,7 @@ func Logger(next http.Handler) http.Handler {
 			ResponseWriter: w,
 			statusCode:     http.StatusOK,
 		}
-		next.ServeHTTP(cw, r)
+		next.ServeHTTP(cw.ResponseWriter, r)
 		latency := time.Since(startTime)
 		log.Printf(
 			"%s %s %d %s",
