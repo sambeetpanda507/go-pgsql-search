@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -92,26 +93,29 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 	news := []NewsData{}
 	var result *gorm.DB
 	if len(search) > 0 {
+		if err := c.DB.Exec("SET pg_trgrm.similarity_threshold = 0.2; -- update the threshold from 0.3 to 0.2").Error; err != nil {
+			log.Fatalf("Error while setting similarity_threshold, %s", err.Error())
+		}
+
 		sql := `
-			SELECT
-				ID,
-				TITLE,
-				DESCRIPTION,
-				SIMILARITY (?, TITLE || ' ' || DESCRIPTION) AS SIMILARITY_RANK,
-				TS_RANK(
-					SEARCH_VECTOR,
-					WEBSEARCH_TO_TSQUERY('english', ?)
-				) AS RANK
-			FROM
-				NEWS
-			WHERE
-				SEARCH_VECTOR @@ WEBSEARCH_TO_TSQUERY('english', ?)
-				OR SIMILARITY (?, TITLE || ' ' || DESCRIPTION) > 0
-				OR TITLE ILIKE ?
-				OR DESCRIPTION ILIKE ?
+			SELECT * FROM (
+				SELECT
+					ID,
+					TITLE,
+					DESCRIPTION,
+					SIMILARITY (?, TITLE || ' ' || DESCRIPTION) AS SIMILARITY_RANK,
+					TS_RANK(
+						SEARCH_VECTOR,
+						WEBSEARCH_TO_TSQUERY('english', ?)
+					) AS RANK
+				FROM
+					NEWS
+				WHERE
+					SEARCH_VECTOR @@ WEBSEARCH_TO_TSQUERY('english', ?)
+					OR SIMILARITY (?, TITLE || ' ' || DESCRIPTION) > 0.25
+			) AS T
 			ORDER BY
-				RANK DESC,
-				SIMILARITY_RANK DESC
+				(T.RANK * 2 + T.SIMILARITY_RANK) DESC
 			OFFSET
 				?	
 			LIMIT
@@ -120,8 +124,6 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 		searchPattern := "%" + search + "%"
 		result = c.DB.Raw(
 			sql,
-			search,
-			search,
 			search,
 			search,
 			searchPattern,
