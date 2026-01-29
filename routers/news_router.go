@@ -7,6 +7,7 @@ import (
 	"github.com/sambeetpanda507/advance-search/middlewares"
 )
 
-func NewsRoutes(mux *http.ServeMux, c controllers.NewController) {
+func NewsRoutes(mux *http.ServeMux, c controllers.NewsController) {
 	mux.Handle("/api/news/from-file", middlewares.CORS(http.HandlerFunc(c.GetNewsFromFile)))
+	mux.Handle("/api/news", middlewares.CORS(http.HandlerFunc(c.GetAllNews)))
 }

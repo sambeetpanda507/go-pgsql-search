@@ -6,17 +6,27 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/sambeetpanda507/advance-search/models"
 	"gorm.io/gorm"
 )
 
-type NewController struct {
+type NewsController struct {
 	DB *gorm.DB
 }
 
-func (c NewController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) {
+func (c NewsController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	// Check if news data already exists
+	var count int64
+	c.DB.Model(&models.News{}).Count(&count)
+	if count > 100 {
+		json.NewEncoder(w).Encode(map[string]any{"message": "Ok", "count": count})
+		return
+	}
+
 	file, err := os.Open("assets/train.csv")
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
@@ -55,4 +65,78 @@ func (c NewController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) {
 func respondError(w http.ResponseWriter, status int, data interface{}) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	query := r.URL.Query()
+	pageStr := query.Get("page")
+	limitStr := query.Get("limit")
+	search := query.Get("search")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil {
+		page = 0
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 10
+	}
+
+	type NewsData struct {
+		ID          uint   `json:"id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+
+	news := []NewsData{}
+	var result *gorm.DB
+	if len(search) > 0 {
+		sql := `
+			SELECT
+				ID,
+				TITLE,
+				DESCRIPTION,
+				SIMILARITY (?, TITLE || ' ' || DESCRIPTION) AS SIMILARITY_RANK,
+				TS_RANK(
+					SEARCH_VECTOR,
+					WEBSEARCH_TO_TSQUERY('english', ?)
+				) AS RANK
+			FROM
+				NEWS
+			WHERE
+				SEARCH_VECTOR @@ WEBSEARCH_TO_TSQUERY('english', ?)
+				OR SIMILARITY (?, TITLE || ' ' || DESCRIPTION) > 0
+				OR TITLE ILIKE ?
+				OR DESCRIPTION ILIKE ?
+			ORDER BY
+				RANK DESC,
+				SIMILARITY_RANK DESC
+			OFFSET
+				?	
+			LIMIT
+				?;
+		`
+		searchPattern := "%" + search + "%"
+		result = c.DB.Raw(
+			sql,
+			search,
+			search,
+			search,
+			search,
+			searchPattern,
+			searchPattern,
+			page*limit,
+			limit,
+		).Scan(&news)
+	} else {
+		result = c.DB.Model(&models.News{}).Limit(limit).Offset(page * limit).Find(&news)
+	}
+
+	if result.Error != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"message": result.Error.Error()})
+	}
+
+	json.NewEncoder(w).Encode(news)
 }

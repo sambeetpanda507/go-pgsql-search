@@ -31,7 +31,7 @@ func main() {
 	}
 
 	// Set up dependancies
-	newsController := controllers.NewController{DB: db}
+	newsController := controllers.NewsController{DB: db}
 
 	// Set up routes
 	routers.Ping(mux)
