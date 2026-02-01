@@ -103,7 +103,7 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 					ID,
 					TITLE,
 					DESCRIPTION,
-					WORD_SIMILARITY  (?, TITLE || ' ' || DESCRIPTION) AS SIMILARITY_RANK,
+					WORD_SIMILARITY  (?, COALESCE(TITLE, '') || ' ' || COALESCE(DESCRIPTION,'')) AS SIMILARITY_RANK,
 					TS_RANK(
 						SEARCH_VECTOR,
 						WEBSEARCH_TO_TSQUERY('english', ?)
@@ -112,7 +112,7 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 					NEWS
 				WHERE
 					SEARCH_VECTOR @@ WEBSEARCH_TO_TSQUERY('english', ?)
-					OR WORD_SIMILARITY(?, TITLE || ' ' || DESCRIPTION) > 0.25
+					OR WORD_SIMILARITY(?, COALESCE(TITLE,'') || ' ' || COALESCE(DESCRIPTION, '')) > 0.25
 			) AS T
 			ORDER BY
 				(T.RANK * 2 + T.SIMILARITY_RANK) DESC
