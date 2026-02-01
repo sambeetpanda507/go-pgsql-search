@@ -1,3 +1,4 @@
+-- For full text search or lexical search
 ALTER TABLE news
 ADD COLUMN IF NOT EXISTS search_vector tsvector GENERATED ALWAYS AS
 (
