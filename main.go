@@ -32,10 +32,12 @@ func main() {
 
 	// Set up dependancies
 	newsController := controllers.NewsController{DB: db}
+	aiController := controllers.AIController{DB: db}
 
 	// Set up routes
 	routers.Ping(mux)
 	routers.NewsRoutes(mux, newsController)
+	routers.AIRouter(mux, aiController)
 
 	go func() {
 		fmt.Printf("Starting server in %s\n", port)

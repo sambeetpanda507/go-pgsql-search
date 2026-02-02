@@ -9,7 +9,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/pgvector/pgvector-go"
 	"github.com/sambeetpanda507/advance-search/models"
+	"github.com/sambeetpanda507/advance-search/utils"
 	"gorm.io/gorm"
 )
 
@@ -43,13 +45,27 @@ func (c NewsController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) 
 
 	news := []models.News{}
 	for i, record := range records {
-		if i == 0 {
+		if i <= 200 {
 			continue
 		}
-		if i == 200 {
+
+		if i == 500 {
 			break
 		}
-		row := models.News{Title: record[1], Description: record[2]}
+
+		combinedText := record[1] + " " + record[2]
+		if combinedText == " " {
+			continue
+		}
+
+		embedding, err := utils.GetEmbedding(combinedText)
+		fmt.Println("embedding: ", embedding)
+		if err != nil {
+			// log.Fatalf("Error generating embedding")
+			continue
+		}
+
+		row := models.News{Title: record[1], Description: record[2], Embedding: pgvector.NewVector(embedding)}
 		news = append(news, row)
 	}
 
@@ -97,6 +113,11 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 			log.Fatalf("Error while setting similarity_threshold, %s", err.Error())
 		}
 
+		embedding, err := utils.GetEmbedding(search)
+		if err != nil {
+			log.Fatalf("Error while creating embedding, %s", err.Error())
+		}
+
 		sql := `
 			SELECT * FROM (
 				SELECT
@@ -107,14 +128,17 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 					TS_RANK(
 						SEARCH_VECTOR,
 						WEBSEARCH_TO_TSQUERY('english', ?)
-					) AS RANK
+					) AS RANK,
+					EMBEDDING <=> ? AS DISTANCE
 				FROM
 					NEWS
 				WHERE
-					SEARCH_VECTOR @@ WEBSEARCH_TO_TSQUERY('english', ?)
+					EMBEDDING <=> ? < 0.8
+					OR SEARCH_VECTOR @@ WEBSEARCH_TO_TSQUERY('english', ?)
 					OR WORD_SIMILARITY(?, COALESCE(TITLE,'') || ' ' || COALESCE(DESCRIPTION, '')) > 0.25
 			) AS T
 			ORDER BY
+				T.DISTANCE ASC,
 				(T.RANK * 2 + T.SIMILARITY_RANK) DESC
 			OFFSET
 				?	
@@ -125,6 +149,8 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 			sql,
 			search,
 			search,
+			pgvector.NewVector(embedding),
+			pgvector.NewVector(embedding),
 			search,
 			search,
 			page*limit,
@@ -140,4 +166,36 @@ func (c NewsController) GetAllNews(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(news)
+}
+
+func (c NewsController) HandleFillEmbedding(w http.ResponseWriter, r *http.Request) {
+	var newsItems []models.News
+	c.DB.Where("embedding IS NULL").FindInBatches(&newsItems, 100, func(tx *gorm.DB, batch int) error {
+		for _, item := range newsItems {
+			fmt.Printf("Processing ID %d: %s\n", item.ID, item.Title)
+			combinedText := item.Title + " " + item.Description
+			if combinedText == " " {
+				continue
+			}
+
+			embedding, err := utils.GetEmbedding(combinedText)
+			if err != nil {
+				fmt.Printf("Error generating embedding for %d\n", item.ID)
+				continue
+			}
+
+			err = tx.Model(&item).Select("Embedding").Updates(models.News{Embedding: pgvector.NewVector(embedding)}).Error
+			if err != nil {
+				fmt.Printf("Error updating embedding for %d\n", item.ID)
+				continue
+			}
+
+			fmt.Printf("Successfully updated embedding for id = %d\n", item.ID)
+		}
+
+		return nil
+	})
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, "Ok")
 }
