@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/pgvector/pgvector-go"
 	"github.com/sambeetpanda507/advance-search/models"
@@ -25,7 +26,7 @@ func (c NewsController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) 
 	// Check if news data already exists
 	var count int64
 	c.DB.Model(&models.News{}).Count(&count)
-	if count > 100 {
+	if count > 500 {
 		json.NewEncoder(w).Encode(map[string]any{"message": "Ok", "count": count})
 		return
 	}
@@ -44,12 +45,16 @@ func (c NewsController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) 
 	}
 
 	news := []models.News{}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errorCount int
+	batch := make(chan struct{}, 10)
 	for i, record := range records {
-		if i <= 200 {
+		if i == 0 {
 			continue
 		}
 
-		if i == 500 {
+		if i == 1000 {
 			break
 		}
 
@@ -58,16 +63,30 @@ func (c NewsController) GetNewsFromFile(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 
-		embedding, err := utils.GetEmbedding(combinedText)
-		fmt.Println("embedding: ", embedding)
-		if err != nil {
-			// log.Fatalf("Error generating embedding")
-			continue
-		}
+		wg.Add(1)
+		batch <- struct{}{} // Block if more than 10 goroutines are running
+		go func(i int, record []string, text string) {
+			defer wg.Done()
+			defer func() { <-batch }() // Release the batch
+			fmt.Printf("Running for i = %d\n", i)
+			embedding, err := utils.GetEmbedding(text)
+			if err != nil {
+				mu.Lock()
+				errorCount++
+				fmt.Printf("Error at i = %d: %v\n", i, err)
+				mu.Unlock()
+				return
+			}
 
-		row := models.News{Title: record[1], Description: record[2], Embedding: pgvector.NewVector(embedding)}
-		news = append(news, row)
+			row := models.News{Title: record[1], Description: record[2], Embedding: pgvector.NewVector(embedding)}
+			mu.Lock()
+			news = append(news, row)
+			mu.Unlock()
+		}(i, record, combinedText)
 	}
+
+	wg.Wait()
+	fmt.Printf("Total embedding error = %d\n", errorCount)
 
 	// Write news to database
 	result := c.DB.Create(news)
