@@ -17,7 +17,7 @@ import (
 func Connect() *gorm.DB {
 	dsn := os.Getenv("DSN")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logger.Error),
 	})
 
 	if err != nil {
@@ -25,6 +25,12 @@ func Connect() *gorm.DB {
 	}
 
 	fmt.Println("Connected to database")
+
+	// Run the migration for 000_create_vector_extension.sql
+	err = createVectorExtension(db)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Run automigrations for the models
 	db.AutoMigrate(&models.News{})
@@ -35,6 +41,28 @@ func Connect() *gorm.DB {
 	}
 
 	return db
+}
+
+func createVectorExtension(db *gorm.DB) error {
+	sqlFile, err := os.Open("migrations/000_create_vector_extension.sql")
+	if err != nil {
+		log.Fatalf("Failed to open 000_create_vector_extension.sql, %v\n", err)
+		return err
+	}
+
+	sqlBytes, err := io.ReadAll(sqlFile)
+	if err != nil {
+		log.Fatalf("failed to read 000_create_vector_extension.sql, %v\n", err)
+		return err
+	}
+
+	if err := db.Exec(string(sqlBytes)).Error; err != nil {
+		log.Fatalf("failed to execute 000_create_vector_extension.sql, %v\n", err)
+		return err
+	}
+
+	fmt.Println("Successfully run migration for 000_create_vector_extension.sql")
+	return nil
 }
 
 func runMigrations(db *gorm.DB) error {
