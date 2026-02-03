@@ -1,0 +1,42 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: tutorial
+    ports:
+      - 5432:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - app-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go-app
+    depends_on:
+      - db
+    ports:
+      - 4567:4567
+    volumes:
+      - .:/go-pgsql-search
+    working_dir: /go-pgsql-search
+    environment:
+      PORT: 4567
+      NEWS_API_KEY: "pub_55c6ce4f25bc413d89e2648a40eeba22"
+      DSN: "host=db user=postgres password=admin dbname=tutorial port=5432 sslmode=disable"
+    networks:
+      - app-network
+    command: sh -c "go mod download && go tool air"
+
+volumes:
+  pgdata:
+
+networks:
+  app-network:
+    driver: bridge
